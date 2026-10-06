@@ -9,9 +9,9 @@
 ![Ollama](https://img.shields.io/badge/Ollama-Local%20LLM-000000)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector%20Store-FF6F00)
 
-<!-- Add a screenshot or GIF here, e.g.:
-![DocuMind demo](docs/demo.gif)
--->
+
+![Alternative Text](ra.gif)
+
 
 ---
 
