@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-multipart
+httpx
+langchain-community
+langchain-chroma
+langchain-ollama
+langchain-text-splitters
+langgraph
+langgraph-checkpoint-sqlite
+pypdf
+python-dotenv
+chromadb
