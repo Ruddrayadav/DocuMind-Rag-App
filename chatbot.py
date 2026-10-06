@@ -1,14 +1,11 @@
-from pydantic import BaseModel
-from langgraph.graph import StateGraph , START, END
+from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langchain_core.messages import HumanMessage , BaseMessage , SystemMessage ,AIMessage
-from typing import TypedDict , Annotated
+from langchain_core.messages import HumanMessage, BaseMessage, SystemMessage, AIMessage
+from typing import TypedDict, Annotated
 from langchain_ollama import ChatOllama
 from langgraph.checkpoint.sqlite import SqliteSaver
-from ragpipeline import retrieve_context 
+from ragpipeline import retrieve_context, deduplicate_sources
 import sqlite3
-
-
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -23,17 +20,22 @@ LLM = ChatOllama(
 )
 
 
-SYSTEM_PROMPT = """
-You are a helpful AI assistant.
+SYSTEM_PROMPT = """You are an AI document assistant.
 
-Answer the user's question using the provided context.
+Answer questions only using the supplied document context.
 
 Rules:
-- Use the context whenever it is relevant.
-- If the answer is not present in the context, say you don't know.
 - Do not make up information.
+- If the answer cannot be found in the supplied context, say:
+  "I couldn't find this information in the provided documents."
+- Do not invent facts.
+- Do not invent sources.
+- Do not invent filenames or page numbers.
+- Cite the documents you use by their ID in brackets like [1] or [2].
+- Source attribution is handled by the application.
 - Keep answers clear and concise.
 """
+
 
 def chat_node(state: ChatState):
 
@@ -41,7 +43,7 @@ def chat_node(state: ChatState):
 
     user_question = messages[-1].content
 
-    context, sources = retrieve_context(user_question)
+    context, sources, _meta = retrieve_context(user_question)
 
     print("\nDEBUG SOURCES:")
     print(sources)
@@ -67,32 +69,22 @@ def chat_node(state: ChatState):
     )
 
     source_lines = []
-    seen_sources = set()
+    for source in deduplicate_sources(sources):
+        filename = source.get("source", "Unknown")
+        page = source.get("page")
 
-    for source in sources:
+        if page is not None:
+            source_text = f"{filename} - Page {page}"
+        else:
+            source_text = filename
 
-         filename = source.get("source", "Unknown")
-         page = source.get("page")
+        source_lines.append(source_text)
 
-         if page is not None:
-          source_text = f"{filename} - Page {page}"
-         else:
-          source_text = filename
-
-         if source_text not in seen_sources:
-            seen_sources.add(source_text)
-            source_lines.append(source_text)
-
-    sources_text = "\n".join(
-        f"- {source}"
-        for source in source_lines
-    )
-
-    final_answer = (
-        f"{response.content}\n\n"
-        f"Sources:\n"
-        f"{sources_text}"
-    )
+    if source_lines:
+        sources_text = "\n".join(f"- {source}" for source in source_lines)
+        final_answer = f"{response.content}\n\nSources:\n{sources_text}"
+    else:
+        final_answer = response.content
 
     return {
         "messages": [
@@ -100,18 +92,18 @@ def chat_node(state: ChatState):
         ]
     }
 
-conn = sqlite3.connect("chatbot.db" , check_same_thread=False)
+
+conn = sqlite3.connect("chatbot.db", check_same_thread=False)
 
 checkpointer = SqliteSaver(conn=conn)
 
 
 graph = StateGraph(ChatState)
- 
 
-graph.add_node("chat_node" , chat_node)
+graph.add_node("chat_node", chat_node)
 
-graph.add_edge(START , "chat_node")
-graph.add_edge("chat_node" , END)
+graph.add_edge(START, "chat_node")
+graph.add_edge("chat_node", END)
 
 
 chatbot = graph.compile(checkpointer=checkpointer)
@@ -156,11 +148,5 @@ def chat():
         print()
 
 
-# -----------------------------
-# Run
-# -----------------------------
-
 if __name__ == "__main__":
     chat()
-
-
